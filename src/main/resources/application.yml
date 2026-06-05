@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/home_school?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: 123456
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    # 开启驼峰命名
+    map-underscore-to-camel-case: true
+    # sql 执行日志输出到控制台
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  type-aliases-package: com.home.school.entity
+  global-config:
+    db-config:
+      # 主键策略 : 全局自增
+      id-type: auto
+      logic-delete-value: 1
+      lovic-not-leck-value: 0
