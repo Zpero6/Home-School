@@ -1028,6 +1028,34 @@ public class StudentTest {
                 .andExpect(jsonPath("$.data.records[0].studentName").value(student.getName()))
                 .andExpect(jsonPath("$.data.records[0].parentName").value("查阅测试家长"))
                 .andExpect(jsonPath("$.data.records[0].content").value(feedbackContent));
+
+        mockMvc.perform(get("/api/v1/statistics/read")
+                        .header("Authorization", "Bearer " + counselorToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.shouldSendCount").value(1))
+                .andExpect(jsonPath("$.data.actualSendCount").value(1))
+                .andExpect(jsonPath("$.data.readCount").value(1))
+                .andExpect(jsonPath("$.data.unreadCount").value(0))
+                .andExpect(jsonPath("$.data.readRate").value(100.00));
+
+        MvcResult feedbackStatisticsResult = mockMvc.perform(get("/api/v1/statistics/feedback")
+                        .header("Authorization", "Bearer " + counselorToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.shouldSendCount").value(1))
+                .andExpect(jsonPath("$.data.actualSendCount").value(1))
+                .andExpect(jsonPath("$.data.feedbackStudentCount").value(1))
+                .andExpect(jsonPath("$.data.noFeedbackCount").value(0))
+                .andExpect(jsonPath("$.data.feedbackRate").value(100.00))
+                .andReturn();
+        Map<String, Object> feedbackStatisticsResponse = objectMapper.readValue(
+                feedbackStatisticsResult.getResponse().getContentAsString(), Map.class);
+        Map<String, Object> feedbackStatisticsData =
+                (Map<String, Object>) feedbackStatisticsResponse.get("data");
+        assertTrue(((Number) feedbackStatisticsData.get("totalFeedbackCount")).longValue() >= 1);
     }
 
     private SysUser prepareCounselor(String username,
