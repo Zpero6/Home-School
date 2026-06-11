@@ -885,6 +885,41 @@ public class StudentTest {
         assertTrue(successSmsCount != null && successSmsCount >= 2);
         assertTrue(failSmsCount != null && failSmsCount >= 1);
         assertTrue(parentAccountCount != null && parentAccountCount >= 1);
+
+        String schoolUsername = "smsRecordSchool";
+        String schoolPassword = "123456";
+        prepareRoleUser(schoolUsername, "短信记录学校用户", schoolPassword, "13800001299", 1L, counselor.getCollegeId());
+        String schoolToken = loginAndGetToken(schoolUsername, schoolPassword);
+
+        mockMvc.perform(get("/api/v1/sms-records")
+                        .header("Authorization", "Bearer " + schoolToken)
+                        .param("studentId", String.valueOf(successStudent.getId()))
+                        .param("status", "SUCCESS")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(successSmsCount))
+                .andExpect(jsonPath("$.data.records[0].studentId").value(successStudent.getId()))
+                .andExpect(jsonPath("$.data.records[0].studentName").value(successStudent.getName()))
+                .andExpect(jsonPath("$.data.records[0].parentName").value("成功学生家长"))
+                .andExpect(jsonPath("$.data.records[0].status").value("SUCCESS"));
+
+        mockMvc.perform(get("/api/v1/sms-records")
+                        .header("Authorization", "Bearer " + token)
+                        .param("studentId", String.valueOf(successStudent.getId()))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/v1/sms-records/student/{studentId}", failStudent.getId())
+                        .header("Authorization", "Bearer " + schoolToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].studentId").value(failStudent.getId()))
+                .andExpect(jsonPath("$.data[0].studentName").value(failStudent.getName()))
+                .andExpect(jsonPath("$.data[0].status").value("FAIL"))
+                .andExpect(jsonPath("$.data[0].failReason").value("家长联系电话为空"));
     }
 
     @Test
