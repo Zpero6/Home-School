@@ -145,18 +145,7 @@ public class StudentServiceImpl implements StudentService {
         if (student == null) {
             throw new BusinessException(404, "学生不存在");
         }
-        String roleCode = SecurityUtil.getCurrentUserRoleCode();
-        if (("ROLE_COUNSELOR").equals(roleCode)) {
-            throw new BusinessException(403, "辅导员不能删除学生");
-        }
-        if (("ROLE_COLLEGE").equals(roleCode)) {
-            Long currentCollegeId = SecurityUtil.getCurrentUserCollegeId();
-            if (!currentCollegeId.equals(student.getCollegeId())) {
-                throw new BusinessException(403, "无权删除该学生");
-            }
-        } else if (!("ROLE_SCHOOL").equals(roleCode)) {
-            throw new BusinessException(403, "权限不足");
-        }
+        dataScopeProvider.assertCanManageCollege(student.getCollegeId());
         studentMapper.deleteById(id);
     }
 }

@@ -111,6 +111,26 @@ public class DataScopeProvider {
         throw new BusinessException(403, "无权操作学院数据");
     }
 
+    public void assertCanViewCollege(Long collegeId) {
+        DataScopeContext scopeContext = current();
+        if (scopeContext.isAll()) {
+            return;
+        }
+        if(scopeContext.hasCollegeScope()
+                && scopeContext.getCollegeId().equals(collegeId)) {
+            return;
+        }
+        throw new BusinessException(403, "无权查询学院数据");
+    }
+
+    public void assertSchool() {
+        DataScopeContext scopeContext = current();
+        if (scopeContext.isAll()) {
+            return;
+        }
+        throw new BusinessException(403, "用户没有数据权限");
+    }
+
 
 }
 

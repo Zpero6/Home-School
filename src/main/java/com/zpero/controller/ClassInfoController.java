@@ -18,20 +18,20 @@ public class ClassInfoController {
     private final ClassInfoService classInfoService;
     @GetMapping("/classes")
     @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE','COUNSELOR')")
-    public PageResult<ClassInfo> queryPage(ClassInfoQueryDTO queryDTO) {
-        return classInfoService.queryPage(queryDTO);
+    public Result<PageResult<ClassInfo>> queryPage(ClassInfoQueryDTO queryDTO) {
+        return Result.success(classInfoService.queryPage(queryDTO));
     }
 
     @GetMapping("/classes/{id}")
     @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE','COUNSELOR')")
-    public ClassInfo getById(@PathVariable Long id) {
-        return classInfoService.getById(id);
+    public Result<ClassInfo> getById(@PathVariable Long id) {
+        return Result.success(classInfoService.getById(id));
     }
 
     @PostMapping("/classes")
     @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE')")
-    public Long createClassInfo(@RequestBody ClassInfoDTO dto) {
-        return classInfoService.createClassInfo(dto);
+    public Result<Long> createClassInfo(@RequestBody ClassInfoDTO dto) {
+        return Result.success(classInfoService.createClassInfo(dto));
     }
     @PutMapping("/classes/{id}")
     @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE')")

@@ -29,10 +29,8 @@ public class BasicDataServiceImpl implements BasicDataService {
     @Override
     public List<College> listCollege() {
 
-        LambdaQueryWrapper<College> queryWrapper = new LambdaQueryWrapper<>();
-        dataScopeProvider.applyCollegeScope(queryWrapper, College::getId);
 
-        return collegeMapper.selectList(queryWrapper);
+        return collegeMapper.selectList(null);
     }
 
     @Override
@@ -42,6 +40,9 @@ public class BasicDataServiceImpl implements BasicDataService {
                 queryWrapper,
                 ClassInfo::getCollegeId,
                 ClassInfo::getCounselorId);
+        if (collegeId != null) {
+            queryWrapper.eq(ClassInfo::getCollegeId, collegeId);
+        }
         return classInfoMapper.selectList(queryWrapper);
     }
 

@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@PreAuthorize("hasAnyRole('SCHOOL','COLLEGE','COUNSELOR')")
 @RequestMapping("/api/v1/basic")
 @RequiredArgsConstructor
 public class BasicDataController {
@@ -24,21 +23,25 @@ public class BasicDataController {
     private final BasicDataService basicDataService;
 
     @GetMapping("/college")
+    @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE','COUNSELOR','PARENT')")
     public Result<List<College>> listCollege() {
         return Result.success(basicDataService.listCollege());
     }
 
     @GetMapping("/classes")
+    @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE','COUNSELOR')")
     public Result<List<ClassInfo>> listClassInfo(@RequestParam(required = false) Long collegeId) {
         return Result.success(basicDataService.listClassInfo(collegeId));
     }
 
     @GetMapping("/counselors")
+    @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE','COUNSELOR')")
     public Result<List<CounselorVo>> listCounselors(@RequestParam(required = false) Long collegeId) {
         return Result.success(basicDataService.listCounselors(collegeId));
     }
 
     @GetMapping("/student-statuses")
+    @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE','COUNSELOR','PARENT')")
     public Result<List<StatusVo>> listStudentStatuses() {
         return Result.success(basicDataService.listStudentStatuses());
     }
