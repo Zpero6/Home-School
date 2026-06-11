@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zpero.entity.ParentAccount;
 import com.zpero.entity.Student;
+import com.zpero.entity.StudentParent;
 import com.zpero.entity.SysUser;
 import com.zpero.mapper.ParentAccountMapper;
+import com.zpero.mapper.StudentParentMapper;
 import com.zpero.mapper.StudentMapper;
 import com.zpero.mapper.SysUserMapper;
 import com.zpero.security.JwtUtil;
@@ -56,6 +58,8 @@ public class StudentTest {
     private ObjectMapper objectMapper;
     @Autowired
     private ParentAccountMapper parentAccountMapper;
+    @Autowired
+    private StudentParentMapper studentParentMapper;
     @Autowired
     private PasswordEncoder passwordEncoder;
     @Autowired
@@ -590,5 +594,403 @@ public class StudentTest {
         assertFalse(deletedCadres.stream().anyMatch(cadre ->
                 ((Number) cadre.get("id")).longValue() == cadreId
         ));
+    }
+
+    @Test
+    void testLetterTemplateShareAndCopy() throws Exception {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS letter_template (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    name VARCHAR(100) NOT NULL,
+                    content TEXT NOT NULL,
+                    background_url VARCHAR(500) NULL,
+                    logo_url VARCHAR(300) NULL,
+                    creator_id BIGINT NOT NULL,
+                    creator_type VARCHAR(20) NOT NULL,
+                    college_id BIGINT NULL,
+                    is_shared TINYINT(1) NOT NULL DEFAULT 0,
+                    source_template_id BIGINT NULL,
+                    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+                    PRIMARY KEY (id),
+                    KEY idx_template_creator (creator_id, creator_type)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """);
+
+        String ownerUsername = "templateOwnerCounselor";
+        String copierUsername = "templateCopierCounselor";
+        String password = "123456";
+
+        SysUser owner = prepareCounselor(ownerUsername, "模板创建辅导员", password, "13800001101");
+        SysUser copier = prepareCounselor(copierUsername, "模板复制辅导员", password, "13800001102");
+
+        String ownerToken = loginAndGetToken(ownerUsername, password);
+        String copierToken = loginAndGetToken(copierUsername, password);
+
+        String templateName = "寒假安全告知模板" + System.currentTimeMillis();
+        Map<String, Object> createMap = new HashMap<>();
+        createMap.put("name", templateName);
+        createMap.put("content", "<h1>寒假安全告知</h1><p>${score}</p><p>${award}</p><p>${cadre}</p>");
+        createMap.put("backgroundUrl", "/uploads/bg/winter.png");
+        createMap.put("logoUrl", "/uploads/logo/school.png");
+
+        MvcResult createResult = mockMvc.perform(post("/api/v1/templates")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").exists())
+                .andReturn();
+        Long templateId = ((Number) objectMapper.readValue(
+                createResult.getResponse().getContentAsString(), Map.class).get("data")).longValue();
+
+        mockMvc.perform(get("/api/v1/templates")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .param("name", templateName)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].id").value(templateId))
+                .andExpect(jsonPath("$.data.records[0].creatorId").value(owner.getId()))
+                .andExpect(jsonPath("$.data.records[0].creatorType").value("COUNSELOR"))
+                .andExpect(jsonPath("$.data.records[0].isShared").value(0));
+
+        Map<String, Object> updateMap = new HashMap<>();
+        updateMap.put("name", templateName + "更新");
+        updateMap.put("content", "<h1>更新后的模板</h1><p>${score}</p>");
+        updateMap.put("backgroundUrl", "/uploads/bg/updated.png");
+        updateMap.put("logoUrl", "/uploads/logo/updated.png");
+
+        mockMvc.perform(put("/api/v1/templates/{id}", templateId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        Map<String, Object> shareMap = new HashMap<>();
+        shareMap.put("isShared", 1);
+        mockMvc.perform(put("/api/v1/templates/{id}/share", templateId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(shareMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        MvcResult sharedListResult = mockMvc.perform(get("/api/v1/templates/shared")
+                        .header("Authorization", "Bearer " + copierToken)
+                        .param("name", templateName + "更新")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andReturn();
+        Map<String, Object> sharedListResponse = objectMapper.readValue(
+                sharedListResult.getResponse().getContentAsString(), Map.class);
+        Map<String, Object> sharedListData = (Map<String, Object>) sharedListResponse.get("data");
+        List<Map<String, Object>> sharedTemplates =
+                (List<Map<String, Object>>) sharedListData.get("records");
+        assertTrue(sharedTemplates.stream().anyMatch(template ->
+                ((Number) template.get("id")).longValue() == templateId
+                        && ((Number) template.get("isShared")).intValue() == 1
+        ));
+
+        MvcResult copyResult = mockMvc.perform(post("/api/v1/templates/{id}/copy", templateId)
+                        .header("Authorization", "Bearer " + copierToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").exists())
+                .andReturn();
+        Long copiedTemplateId = ((Number) objectMapper.readValue(
+                copyResult.getResponse().getContentAsString(), Map.class).get("data")).longValue();
+
+        mockMvc.perform(get("/api/v1/templates/{id}", copiedTemplateId)
+                        .header("Authorization", "Bearer " + copierToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.creatorId").value(copier.getId()))
+                .andExpect(jsonPath("$.data.sourceTemplateId").value(templateId))
+                .andExpect(jsonPath("$.data.isShared").value(0));
+
+        mockMvc.perform(put("/api/v1/templates/{id}", templateId)
+                        .header("Authorization", "Bearer " + copierToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(403));
+
+        mockMvc.perform(delete("/api/v1/templates/{id}", templateId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        mockMvc.perform(delete("/api/v1/templates/{id}", copiedTemplateId)
+                        .header("Authorization", "Bearer " + copierToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+    }
+
+    @Test
+    void testSendLetters() throws Exception {
+        String username = "letterSendCounselor";
+        String password = "123456";
+
+        SysUser counselor = prepareCounselor(username, "信件发送测试辅导员", password, "13800001201");
+        String token = loginAndGetToken(username, password);
+
+        Student successStudent = prepareStudent(
+                "LETTER001",
+                "信件发送成功学生",
+                "110101200001010044",
+                counselor.getId(),
+                counselor.getCollegeId()
+        );
+        Student failStudent = prepareStudent(
+                "LETTER002",
+                "信件发送失败学生",
+                "110101200001010055",
+                counselor.getId(),
+                counselor.getCollegeId()
+        );
+        prepareParent(successStudent.getId(), "成功学生家长", "FATHER", "13900001201", 1);
+        prepareParent(failStudent.getId(), "失败学生家长", "MOTHER", null, 1);
+
+        jdbcTemplate.update("""
+                        INSERT INTO student_score (student_id, course_name, score, academic_year, semester)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                successStudent.getId(),
+                "信件测试课程",
+                new BigDecimal("96.0"),
+                "2025-2026",
+                1);
+        jdbcTemplate.update("""
+                        INSERT INTO student_award (student_id, award_name, award_level, award_time)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                successStudent.getId(),
+                "信件测试奖项",
+                "校级",
+                LocalDateTime.of(2026, 6, 1, 10, 0));
+        jdbcTemplate.update("""
+                        INSERT INTO student_cadre (student_id, position_name, start_time, end_time)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                successStudent.getId(),
+                "信件测试班干部",
+                LocalDateTime.of(2025, 9, 1, 0, 0),
+                LocalDateTime.of(2026, 7, 1, 0, 0));
+
+        Map<String, Object> templateMap = new HashMap<>();
+        templateMap.put("name", "信件发送模板" + System.currentTimeMillis());
+        templateMap.put("content", "<h1>学生在校情况</h1>${score}${award}${cadre}");
+        templateMap.put("backgroundUrl", "/uploads/bg/letter.png");
+        templateMap.put("logoUrl", "/uploads/logo/letter.png");
+
+        MvcResult templateResult = mockMvc.perform(post("/api/v1/templates")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(templateMap)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").exists())
+                .andReturn();
+        Long templateId = ((Number) objectMapper.readValue(
+                templateResult.getResponse().getContentAsString(), Map.class).get("data")).longValue();
+
+        Map<String, Object> sendMap = new HashMap<>();
+        sendMap.put("templateId", templateId);
+        sendMap.put("studentIds", List.of(successStudent.getId(), failStudent.getId()));
+
+        MvcResult sendResult = mockMvc.perform(post("/api/v1/letters/send")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(sendMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalCount").value(2))
+                .andExpect(jsonPath("$.data.successCount").value(1))
+                .andExpect(jsonPath("$.data.failCount").value(1))
+                .andExpect(jsonPath("$.data.failList[0].studentId").value(failStudent.getId()))
+                .andReturn();
+
+        System.out.println(sendResult.getResponse().getContentAsString());
+
+        MvcResult listResult = mockMvc.perform(get("/api/v1/letters")
+                        .header("Authorization", "Bearer " + token)
+                        .param("studentId", String.valueOf(successStudent.getId()))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].status").value("SENT"))
+                .andReturn();
+
+        Map<String, Object> listResponse = objectMapper.readValue(
+                listResult.getResponse().getContentAsString(), Map.class);
+        Map<String, Object> listData = (Map<String, Object>) listResponse.get("data");
+        List<Map<String, Object>> letters = (List<Map<String, Object>>) listData.get("records");
+        Map<String, Object> sentLetter = letters.get(0);
+        Long letterId = ((Number) sentLetter.get("id")).longValue();
+        String content = (String) sentLetter.get("content");
+        assertTrue(content.contains("信件测试课程"));
+        assertTrue(content.contains("信件测试奖项"));
+        assertTrue(content.contains("信件测试班干部"));
+
+        Map<String, Object> updateMap = new HashMap<>();
+        updateMap.put("content", content + "<p>辅导员补充说明</p>");
+        mockMvc.perform(put("/api/v1/letters/{id}", letterId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        Map<String, Object> resendMap = new HashMap<>();
+        resendMap.put("letterIds", List.of(letterId));
+        mockMvc.perform(post("/api/v1/letters/resend")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(resendMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalCount").value(1))
+                .andExpect(jsonPath("$.data.successCount").value(1))
+                .andExpect(jsonPath("$.data.failCount").value(0));
+
+        Integer successSmsCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM sms_record WHERE student_id = ? AND status = 'SUCCESS'",
+                Integer.class,
+                successStudent.getId()
+        );
+        Integer failSmsCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM sms_record WHERE student_id = ? AND status = 'FAIL'",
+                Integer.class,
+                failStudent.getId()
+        );
+        Integer parentAccountCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM parent_account WHERE student_id = ?",
+                Integer.class,
+                successStudent.getId()
+        );
+        assertTrue(successSmsCount != null && successSmsCount >= 2);
+        assertTrue(failSmsCount != null && failSmsCount >= 1);
+        assertTrue(parentAccountCount != null && parentAccountCount >= 1);
+    }
+
+    private SysUser prepareCounselor(String username,
+                                     String realName,
+                                     String password,
+                                     String phone) {
+        SysUser counselor = sysUserMapper.selectOne(
+                new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getUsername, username)
+        );
+        if (counselor == null) {
+            counselor = new SysUser();
+            counselor.setUsername(username);
+            counselor.setRealName(realName);
+            counselor.setRoleId(3L);
+            counselor.setCollegeId(1L);
+            counselor.setPhone(phone);
+            counselor.setStatus(1);
+            counselor.setPassword(passwordEncoder.encode(password));
+            sysUserMapper.insert(counselor);
+        } else {
+            counselor.setRealName(realName);
+            counselor.setRoleId(3L);
+            counselor.setCollegeId(1L);
+            counselor.setPhone(phone);
+            counselor.setStatus(1);
+            counselor.setPassword(passwordEncoder.encode(password));
+            sysUserMapper.updateById(counselor);
+        }
+        return counselor;
+    }
+
+    private String loginAndGetToken(String username, String password) throws Exception {
+        Map<String, Object> loginMap = new HashMap<>();
+        loginMap.put("username", username);
+        loginMap.put("password", password);
+        MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginMap)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.token").exists())
+                .andReturn();
+
+        Map<String, Object> loginResponse = objectMapper.readValue(
+                loginResult.getResponse().getContentAsString(), Map.class);
+        Map<String, Object> loginData = (Map<String, Object>) loginResponse.get("data");
+        return (String) loginData.get("token");
+    }
+
+    private Student prepareStudent(String studentNo,
+                                   String name,
+                                   String idCard,
+                                   Long counselorId,
+                                   Long collegeId) {
+        Student student = studentMapper.selectOne(
+                new LambdaQueryWrapper<Student>()
+                        .eq(Student::getIdCard, idCard)
+        );
+        if (student == null) {
+            student = new Student();
+            student.setStudentNo(studentNo);
+            student.setName(name);
+            student.setIdCard(idCard);
+            student.setCollegeId(collegeId);
+            student.setClassId(1L);
+            student.setCounselorId(counselorId);
+            student.setEnrollmentYear("2023");
+            student.setStatus("在校");
+            studentMapper.insert(student);
+        } else {
+            student.setStudentNo(studentNo);
+            student.setName(name);
+            student.setCollegeId(collegeId);
+            student.setClassId(1L);
+            student.setCounselorId(counselorId);
+            student.setEnrollmentYear("2023");
+            student.setStatus("在校");
+            studentMapper.updateById(student);
+        }
+        return student;
+    }
+
+    private StudentParent prepareParent(Long studentId,
+                                        String name,
+                                        String relation,
+                                        String phone,
+                                        Integer isDefault) {
+        StudentParent parent = studentParentMapper.selectOne(
+                new LambdaQueryWrapper<StudentParent>()
+                        .eq(StudentParent::getStudentId, studentId)
+                        .eq(StudentParent::getRelation, relation)
+        );
+        if (parent == null) {
+            parent = new StudentParent();
+            parent.setStudentId(studentId);
+            parent.setRelation(relation);
+            parent.setSourceType("MANUAL");
+        }
+        parent.setName(name);
+        parent.setPhone(phone);
+        parent.setIsDefault(isDefault);
+        if (parent.getId() == null) {
+            studentParentMapper.insert(parent);
+        } else {
+            studentParentMapper.updateById(parent);
+        }
+        return parent;
     }
 }

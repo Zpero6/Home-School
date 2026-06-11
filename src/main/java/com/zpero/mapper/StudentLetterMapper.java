@@ -1,0 +1,9 @@
+package com.zpero.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.zpero.entity.StudentLetter;
+import org.apache.ibatis.annotations.Mapper;
+
+@Mapper
+public interface StudentLetterMapper extends BaseMapper<StudentLetter> {
+}
