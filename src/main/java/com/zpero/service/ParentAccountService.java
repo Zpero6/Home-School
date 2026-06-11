@@ -4,12 +4,12 @@ package com.zpero.service;
 import com.zpero.common.result.PageResult;
 import com.zpero.dto.parent.ParentAccountDTO;
 import com.zpero.dto.parent.ParentAccountQueryDTO;
-import com.zpero.entity.ParentAccount;
+import com.zpero.vo.parent.ParentAccountVO;
 
 public interface ParentAccountService {
-    PageResult<ParentAccount> queryPage(ParentAccountQueryDTO queryDTO);
+    PageResult<ParentAccountVO> queryPage(ParentAccountQueryDTO queryDTO);
 
-    ParentAccount getById(Long id);
+    ParentAccountVO getById(Long id);
 
     Long createParentAccount(ParentAccountDTO parentAccountDTO);
 

@@ -13,6 +13,7 @@ import com.zpero.mapper.ParentAccountMapper;
 import com.zpero.mapper.StudentMapper;
 import com.zpero.security.dataScope.DataScopeProvider;
 import com.zpero.service.ParentAccountService;
+import com.zpero.vo.parent.ParentAccountVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -30,7 +31,7 @@ public class ParentAccountServiceImpl implements ParentAccountService {
     private final PasswordEncoder passwordEncoder;
 
     @Override
-    public PageResult<ParentAccount> queryPage(ParentAccountQueryDTO queryDTO) {
+    public PageResult<ParentAccountVO> queryPage(ParentAccountQueryDTO queryDTO) {
         LambdaQueryWrapper<Student> studentWrapper = new LambdaQueryWrapper<>();
         dataScopeProvider.applyCollegeAndCounselorScope(
                 studentWrapper,
@@ -43,7 +44,12 @@ public class ParentAccountServiceImpl implements ParentAccountService {
                 .map(Student::getId).toList();
 
         if (studentIds.isEmpty()) {
-            return PageResult.of(new Page<>(queryDTO.getPage(), queryDTO.getSize()));
+            PageResult<ParentAccountVO> emptyResult = new PageResult<>();
+            emptyResult.setPage(queryDTO.getPage());
+            emptyResult.setSize(queryDTO.getSize());
+            emptyResult.setTotal(0L);
+            emptyResult.setRecords(List.of());
+            return emptyResult;
         }
         LambdaQueryWrapper<ParentAccount> wrapper = new LambdaQueryWrapper<>();
         wrapper.in(ParentAccount::getStudentId, studentIds);
@@ -56,19 +62,22 @@ public class ParentAccountServiceImpl implements ParentAccountService {
                 new Page<>(queryDTO.getPage(), queryDTO.getSize()),
                 wrapper
         );
-        return PageResult.of(result);
+
+        PageResult<ParentAccountVO> pageResult = new PageResult<>();
+        pageResult.setPage(result.getCurrent());
+        pageResult.setSize(result.getSize());
+        pageResult.setTotal(result.getTotal());
+        pageResult.setRecords(result.getRecords()
+                .stream()
+                .map(ParentAccountVO::new)
+                .toList());
+        return pageResult;
 
     }
 
     @Override
-    public ParentAccount getById(Long id) {
-        ParentAccount parentAccount = parentAccountMapper.selectById(id);
-        if (parentAccount == null) {
-            throw new BusinessException(404, "家长不存在");
-        }
-        Student student = getAccessibleStudent(parentAccount.getStudentId());
-        dataScopeProvider.assertCollegeAndCounselorAccess(student.getCollegeId(), student.getCounselorId());
-        return parentAccount;
+    public ParentAccountVO getById(Long id) {
+        return new ParentAccountVO(getAccessibleAccount(id));
     }
 
     @Override
@@ -120,11 +129,7 @@ public class ParentAccountServiceImpl implements ParentAccountService {
         if (parentAccountDTO == null) {
             throw new BusinessException(400, "家长账号信息不能为空");
         }
-        ParentAccount account = getById(id);
-
-        Student student = getAccessibleStudent(parentAccountDTO.getStudentId());
-
-        dataScopeProvider.assertCollegeAndCounselorAccess(student.getCollegeId(), student.getCounselorId());
+        ParentAccount account = getAccessibleAccount(id);
 
         if (parentAccountDTO.getStudentId() != null
                 && !account.getStudentId().equals(parentAccountDTO.getStudentId())) {
@@ -143,8 +148,7 @@ public class ParentAccountServiceImpl implements ParentAccountService {
             }
             account.setUsername(parentAccountDTO.getUsername());
         }
-        if (StringUtils.hasText(parentAccountDTO.getPassword())
-                && !account.getPassword().equals(parentAccountDTO.getPassword())) {
+        if (StringUtils.hasText(parentAccountDTO.getPassword())) {
             account.setPassword(passwordEncoder.encode(parentAccountDTO.getPassword()));
         }
         parentAccountMapper.updateById(account);
@@ -153,11 +157,22 @@ public class ParentAccountServiceImpl implements ParentAccountService {
 
     @Override
     public void deleteParentAccount(Long id) {
-        ParentAccount account = getById(id);
-        Student student = getAccessibleStudent(account.getId());
+        ParentAccount account = getAccessibleAccount(id);
+        Student student = getAccessibleStudent(account.getStudentId());
 
         dataScopeProvider.assertCanManageCollege(student.getCollegeId());
-        parentAccountMapper.deleteById(account);
+        parentAccountMapper.deleteById(id);
+    }
+
+    private ParentAccount getAccessibleAccount(Long id) {
+        ParentAccount account = parentAccountMapper.selectById(id);
+        if (account == null) {
+            throw new BusinessException(404, "家长账号不存在");
+        }
+
+        getAccessibleStudent(account.getStudentId());
+
+        return account;
     }
 
     private Student getAccessibleStudent(Long studentId) {

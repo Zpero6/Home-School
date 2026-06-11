@@ -8,7 +8,7 @@ import com.zpero.entity.Student;
 
 public interface StudentService {
 
-    public PageResult<Student> queryPage(StudentQueryDTO queryDTO);
+    PageResult<Student> queryPage(StudentQueryDTO queryDTO);
 
     Student getStudentById(Long id);
 

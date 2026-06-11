@@ -4,8 +4,8 @@ import com.zpero.common.result.PageResult;
 import com.zpero.common.result.Result;
 import com.zpero.dto.parent.ParentAccountDTO;
 import com.zpero.dto.parent.ParentAccountQueryDTO;
-import com.zpero.entity.ParentAccount;
 import com.zpero.service.ParentAccountService;
+import com.zpero.vo.parent.ParentAccountVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -19,13 +19,13 @@ public class ParentAccountController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE','COUNSELOR')")
-    public Result<PageResult<ParentAccount>> queryPage(ParentAccountQueryDTO queryDTO) {
+    public Result<PageResult<ParentAccountVO>> queryPage(ParentAccountQueryDTO queryDTO) {
         return Result.success(parentAccountService.queryPage(queryDTO));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE','COUNSELOR')")
-    public Result<ParentAccount> getById(@PathVariable Long id) {
+    public Result<ParentAccountVO> getById(@PathVariable Long id) {
         return Result.success(parentAccountService.getById(id));
     }
 
