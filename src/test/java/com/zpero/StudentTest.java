@@ -1,7 +1,9 @@
 package com.zpero;
 
+import com.alibaba.excel.EasyExcel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.zpero.dto.score.StudentScoreImportDTO;
 import com.zpero.entity.ParentAccount;
 import com.zpero.entity.Student;
 import com.zpero.entity.StudentParent;
@@ -19,12 +21,14 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -35,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
@@ -378,6 +383,114 @@ public class StudentTest {
         assertFalse(deletedScores.stream().anyMatch(score ->
                 ((Number) score.get("id")).longValue() == scoreId
         ));
+    }
+
+    @Test
+    void testSystemConfigStudentExportScoreImportAndPassword() throws Exception {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS system_config (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    config_key VARCHAR(100) NOT NULL,
+                    config_value VARCHAR(500) NOT NULL,
+                    description VARCHAR(200) NULL,
+                    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    UNIQUE KEY uk_config_key (config_key)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """);
+
+        String suffix = String.valueOf(System.currentTimeMillis()).substring(7);
+        String schoolUsername = "finishSchool" + suffix;
+        String schoolPassword = "123456";
+        prepareRoleUser(schoolUsername, "收尾测试学校用户", schoolPassword, "1380077" + suffix, 1L, 1L);
+        String schoolToken = loginAndGetToken(schoolUsername, schoolPassword);
+
+        String configKey = "TEST_CONFIG_" + suffix;
+        Map<String, Object> configMap = new HashMap<>();
+        configMap.put("configValue", "https://example.com/h5/" + suffix);
+        configMap.put("description", "测试配置");
+        mockMvc.perform(put("/api/v1/system-configs/{configKey}", configKey)
+                        .header("Authorization", "Bearer " + schoolToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(configMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        mockMvc.perform(get("/api/v1/system-configs/{configKey}", configKey)
+                        .header("Authorization", "Bearer " + schoolToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.configKey").value(configKey))
+                .andExpect(jsonPath("$.data.configValue").value("https://example.com/h5/" + suffix));
+
+        String counselorUsername = "finishCounselor" + suffix;
+        String counselorPassword = "123456";
+        SysUser counselor = prepareCounselor(counselorUsername, "收尾测试辅导员", counselorPassword, "1380088" + suffix);
+        String counselorToken = loginAndGetToken(counselorUsername, counselorPassword);
+
+        Map<String, Object> passwordMap = new HashMap<>();
+        passwordMap.put("oldPassword", counselorPassword);
+        passwordMap.put("newPassword", "new" + counselorPassword);
+        mockMvc.perform(put("/api/v1/auth/password")
+                        .header("Authorization", "Bearer " + counselorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(passwordMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        String changedCounselorToken = loginAndGetToken(counselorUsername, "new" + counselorPassword);
+        Student student = prepareStudent(
+                "FINISH" + suffix,
+                "收尾测试学生",
+                "110101200003" + suffix,
+                counselor.getId(),
+                counselor.getCollegeId()
+        );
+
+        MvcResult studentExportResult = mockMvc.perform(get("/api/v1/students/export")
+                        .header("Authorization", "Bearer " + schoolToken)
+                        .param("studentNo", student.getStudentNo()))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertExcelResponse(studentExportResult, "students.xlsx");
+
+        StudentScoreImportDTO importRow = new StudentScoreImportDTO();
+        importRow.setStudentNo(student.getStudentNo());
+        importRow.setCourseName("导入测试课程" + suffix);
+        importRow.setScore(new BigDecimal("91.5"));
+        importRow.setAcademicYear("2025-2026");
+        importRow.setSemester(1);
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        EasyExcel.write(outputStream, StudentScoreImportDTO.class)
+                .sheet("成绩")
+                .doWrite(List.of(importRow));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "scores.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                outputStream.toByteArray());
+        mockMvc.perform(multipart("/api/v1/scores/import")
+                        .file(file)
+                        .header("Authorization", "Bearer " + changedCounselorToken))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalCount").value(1))
+                .andExpect(jsonPath("$.data.successCount").value(1))
+                .andExpect(jsonPath("$.data.failCount").value(0));
+
+        mockMvc.perform(get("/api/v1/students/{studentId}/scores", student.getId())
+                        .header("Authorization", "Bearer " + changedCounselorToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].courseName").value("导入测试课程" + suffix))
+                .andExpect(jsonPath("$.data[0].score").value(91.5));
     }
 
     @Test
@@ -938,6 +1051,18 @@ public class StudentTest {
                     KEY idx_feedback_student (student_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS external_link (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    title VARCHAR(100) NOT NULL,
+                    url VARCHAR(500) NOT NULL,
+                    sort INT NOT NULL DEFAULT 0,
+                    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    KEY idx_link_sort (sort)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """);
 
         String suffix = String.valueOf(System.currentTimeMillis()).substring(7);
         String counselorUsername = "parentLetterCounselor" + suffix;
@@ -959,6 +1084,15 @@ public class StudentTest {
                 counselor.getCollegeId()
         );
         prepareParent(student.getId(), "查阅测试家长", "FATHER", "13900" + suffix, 1);
+        jdbcTemplate.update("""
+                        INSERT INTO student_score (student_id, course_name, score, academic_year, semester)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                student.getId(),
+                "家长端成绩课程" + suffix,
+                new BigDecimal("88.5"),
+                "2025-2026",
+                2);
 
         String unreadIdCard = "110101200002" + suffix;
         Student unreadStudent = prepareStudent(
@@ -1039,6 +1173,16 @@ public class StudentTest {
                 letterResult.getResponse().getContentAsString(), Map.class);
         Map<String, Object> letterData = (Map<String, Object>) letterResponse.get("data");
         Long letterId = ((Number) letterData.get("letterId")).longValue();
+
+        mockMvc.perform(get("/api/v1/parent/scores")
+                        .header("Authorization", "Bearer " + parentToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].studentId").value(student.getId()))
+                .andExpect(jsonPath("$.data[0].courseName").value("家长端成绩课程" + suffix))
+                .andExpect(jsonPath("$.data[0].score").value(88.5))
+                .andExpect(jsonPath("$.data[0].semester").value(2));
 
         String feedbackContent = "已收到家长端信件" + System.currentTimeMillis();
         Map<String, Object> feedbackMap = new HashMap<>();
@@ -1155,6 +1299,84 @@ public class StudentTest {
         prepareRoleUser(schoolUsername, "发送统计学校用户", statisticsPassword, "13800001303", 1L, counselor.getCollegeId());
         String collegeToken = loginAndGetToken(collegeUsername, statisticsPassword);
         String schoolToken = loginAndGetToken(schoolUsername, statisticsPassword);
+
+        Map<String, Object> linkMap = new HashMap<>();
+        linkMap.put("title", "家长端链接" + suffix);
+        linkMap.put("url", "https://example.com/parent-link-" + suffix);
+        linkMap.put("sort", 20);
+        MvcResult linkResult = mockMvc.perform(post("/api/v1/links")
+                        .header("Authorization", "Bearer " + schoolToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(linkMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").exists())
+                .andReturn();
+        Long linkId = ((Number) objectMapper.readValue(
+                linkResult.getResponse().getContentAsString(), Map.class).get("data")).longValue();
+
+        mockMvc.perform(get("/api/v1/links")
+                        .header("Authorization", "Bearer " + schoolToken)
+                        .param("title", "家长端链接" + suffix)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value(linkId))
+                .andExpect(jsonPath("$.data[0].title").value("家长端链接" + suffix));
+
+        linkMap.put("title", "家长端链接更新" + suffix);
+        linkMap.put("sort", 5);
+        mockMvc.perform(put("/api/v1/links/{id}", linkId)
+                        .header("Authorization", "Bearer " + schoolToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(linkMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        Map<String, Object> sortMap = new HashMap<>();
+        sortMap.put("links", List.of(Map.of("id", linkId, "sort", 1)));
+        mockMvc.perform(put("/api/v1/links/sort")
+                        .header("Authorization", "Bearer " + schoolToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(sortMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        MvcResult parentLinksResult = mockMvc.perform(get("/api/v1/parent/links")
+                        .header("Authorization", "Bearer " + parentToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andReturn();
+        Map<String, Object> parentLinksResponse = objectMapper.readValue(
+                parentLinksResult.getResponse().getContentAsString(), Map.class);
+        List<Map<String, Object>> parentLinks = (List<Map<String, Object>>) parentLinksResponse.get("data");
+        assertTrue(parentLinks.stream()
+                .anyMatch(link -> linkId.equals(((Number) link.get("id")).longValue())
+                        && ("家长端链接更新" + suffix).equals(link.get("title"))));
+
+        Map<String, Object> passwordMap = new HashMap<>();
+        passwordMap.put("oldPassword", idCard.substring(idCard.length() - 6));
+        passwordMap.put("newPassword", "new" + idCard.substring(idCard.length() - 6));
+        mockMvc.perform(put("/api/v1/parent/password")
+                        .header("Authorization", "Bearer " + parentToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(passwordMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        Map<String, Object> changedParentLoginMap = new HashMap<>();
+        changedParentLoginMap.put("idCard", idCard);
+        changedParentLoginMap.put("password", "new" + idCard.substring(idCard.length() - 6));
+        mockMvc.perform(post("/api/v1/parent/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(changedParentLoginMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.token").exists());
 
         mockMvc.perform(get("/api/v1/statistics/send/college")
                         .header("Authorization", "Bearer " + collegeToken)

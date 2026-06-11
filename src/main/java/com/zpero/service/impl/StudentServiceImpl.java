@@ -1,5 +1,6 @@
 package com.zpero.service.impl;
 
+import com.alibaba.excel.EasyExcel;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zpero.common.exception.BusinessException;
@@ -10,12 +11,18 @@ import com.zpero.entity.ClassInfo;
 import com.zpero.entity.Student;
 import com.zpero.mapper.ClassInfoMapper;
 import com.zpero.mapper.StudentMapper;
-import com.zpero.security.SecurityUtil;
 import com.zpero.security.dataScope.DataScopeProvider;
 import com.zpero.service.StudentService;
+import com.zpero.vo.student.export.StudentExportVO;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -27,36 +34,12 @@ public class StudentServiceImpl implements StudentService {
 
     @Override
     public PageResult<Student> queryPage(StudentQueryDTO queryDTO) {
+        StudentQueryDTO query = queryDTO == null ? new StudentQueryDTO() : queryDTO;
+        LambdaQueryWrapper<Student> wrapper = buildQueryWrapper(query);
 
-        LambdaQueryWrapper<Student> wrapper = new LambdaQueryWrapper<>();
-        String roleCode = SecurityUtil.getCurrentUserRoleCode();
-        dataScopeProvider.applyCollegeAndCounselorScope(wrapper,
-                Student::getCollegeId,
-                Student::getCounselorId);
-
-        // 通过字段查询
-        wrapper.like(StringUtils.hasText(queryDTO.getName()),
-                Student::getName,
-                queryDTO.getName());
-        wrapper.eq(StringUtils.hasText(queryDTO.getStudentNo()),
-                Student::getStudentNo,
-                queryDTO.getStudentNo()
-        );
-        wrapper.eq(queryDTO.getCollegeId() != null,
-                Student::getCollegeId,
-                queryDTO.getCollegeId()
-        );
-        wrapper.eq(queryDTO.getClassId() != null,
-                Student::getClassId,
-                queryDTO.getClassId()
-        );
-        wrapper.eq(StringUtils.hasText(queryDTO.getStatus()),
-                Student::getStatus,
-                queryDTO.getStatus()
-        );
 
         Page<Student> result = studentMapper.selectPage(
-                new Page<>(queryDTO.getPage(), queryDTO.getSize()),
+                new Page<>(query.getPage(), query.getSize()),
                 wrapper
         );
 
@@ -147,5 +130,59 @@ public class StudentServiceImpl implements StudentService {
         }
         dataScopeProvider.assertCanManageCollege(student.getCollegeId());
         studentMapper.deleteById(id);
+    }
+
+    @Override
+    public void exportStudents(StudentQueryDTO queryDTO, HttpServletResponse response) {
+        StudentQueryDTO query = queryDTO == null ? new StudentQueryDTO() : queryDTO;
+        LambdaQueryWrapper<Student> wrapper = buildQueryWrapper(query);
+        List<StudentExportVO> exportList = studentMapper.selectList(wrapper)
+                .stream()
+                .map(StudentExportVO::new)
+                .toList();
+
+        String filename = URLEncoder.encode("students.xlsx", StandardCharsets.UTF_8)
+                .replaceAll("\\+", "%20");
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setCharacterEncoding("utf-8");
+        response.setHeader("Content-Disposition", "attachment; filename=" + filename);
+
+        try {
+            EasyExcel.write(response.getOutputStream(), StudentExportVO.class)
+                    .sheet("学生列表")
+                    .doWrite(exportList);
+        } catch (IOException e) {
+            throw new BusinessException(500, "导出学生列表失败");
+        }
+    }
+
+    private LambdaQueryWrapper<Student> buildQueryWrapper(StudentQueryDTO queryDTO) {
+        LambdaQueryWrapper<Student> wrapper = new LambdaQueryWrapper<>();
+        dataScopeProvider.applyCollegeAndCounselorScope(wrapper,
+                Student::getCollegeId,
+                Student::getCounselorId);
+
+        wrapper.like(StringUtils.hasText(queryDTO.getName()),
+                Student::getName,
+                queryDTO.getName());
+        wrapper.eq(StringUtils.hasText(queryDTO.getStudentNo()),
+                Student::getStudentNo,
+                queryDTO.getStudentNo()
+        );
+        wrapper.eq(queryDTO.getCollegeId() != null,
+                Student::getCollegeId,
+                queryDTO.getCollegeId()
+        );
+        wrapper.eq(queryDTO.getClassId() != null,
+                Student::getClassId,
+                queryDTO.getClassId()
+        );
+        wrapper.eq(StringUtils.hasText(queryDTO.getStatus()),
+                Student::getStatus,
+                queryDTO.getStatus()
+        );
+        wrapper.orderByDesc(Student::getCreateTime)
+                .orderByDesc(Student::getId);
+        return wrapper;
     }
 }

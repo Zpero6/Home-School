@@ -3,11 +3,14 @@ package com.zpero.controller;
 import com.zpero.common.constant.SecurityConstants;
 import com.zpero.common.result.Result;
 import com.zpero.dto.LoginDTO;
+import com.zpero.dto.auth.PasswordUpdateDTO;
 import com.zpero.service.AuthService;
 import com.zpero.vo.LoginVo;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,5 +34,12 @@ public class AuthController {
         authService.logout(request.getHeader(SecurityConstants.HEADER));
         return Result.success();
 
+    }
+
+    @PutMapping("auth/password")
+    @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE','COUNSELOR')")
+    public Result<Void> updatePassword(@RequestBody PasswordUpdateDTO dto) {
+        authService.updatePassword(dto);
+        return Result.success();
     }
 }

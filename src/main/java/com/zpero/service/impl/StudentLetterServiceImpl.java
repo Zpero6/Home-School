@@ -30,6 +30,7 @@ import com.zpero.security.dataScope.DataScopeContext;
 import com.zpero.security.dataScope.StudentAccessProvider;
 import com.zpero.service.LetterTemplateService;
 import com.zpero.service.StudentLetterService;
+import com.zpero.service.SystemConfigService;
 import com.zpero.vo.letter.LetterSendResultVO;
 import com.zpero.vo.letter.StudentLetterVO;
 import com.zpero.vo.template.LetterTemplateVO;
@@ -51,6 +52,8 @@ public class StudentLetterServiceImpl implements StudentLetterService {
     private static final String STATUS_SENT = "SENT";
     private static final String SMS_STATUS_SUCCESS = "SUCCESS";
     private static final String SMS_STATUS_FAIL = "FAIL";
+    private static final String CONFIG_H5_BASE_URL = "H5_BASE_URL";
+    private static final String DEFAULT_H5_BASE_URL = "http://localhost:8080/api/v1/parent";
     private static final int DEFAULT_PARENT = 1;
 
     private final StudentLetterMapper studentLetterMapper;
@@ -62,6 +65,7 @@ public class StudentLetterServiceImpl implements StudentLetterService {
     private final StudentCadreMapper studentCadreMapper;
     private final ParentAccountMapper parentAccountMapper;
     private final LetterTemplateService letterTemplateService;
+    private final SystemConfigService systemConfigService;
     private final StudentAccessProvider studentAccessProvider;
     private final DataScopeProvider dataScopeProvider;
     private final PasswordEncoder passwordEncoder;
@@ -126,13 +130,13 @@ public class StudentLetterServiceImpl implements StudentLetterService {
 
                 if (!StringUtils.hasText(parent.getPhone())) {
                     markLetterUnsend(letter);
-                    saveSmsRecord(student, parent, finalContent, SMS_STATUS_FAIL, "家长联系电话为空");
+                    saveSmsRecord(student, parent, letter.getId(), SMS_STATUS_FAIL, "家长联系电话为空");
                     result.addFail(student.getId(), student.getName(), "家长联系电话为空");
                     continue;
                 }
 
                 markLetterSent(letter);
-                saveSmsRecord(student, parent, finalContent, SMS_STATUS_SUCCESS, null);
+                saveSmsRecord(student, parent, letter.getId(), SMS_STATUS_SUCCESS, null);
                 result.addSuccess();
             } catch (BusinessException e) {
                 result.addFail(studentId, null, e.getMessage());
@@ -161,13 +165,13 @@ public class StudentLetterServiceImpl implements StudentLetterService {
             }
             if (!StringUtils.hasText(parent.getPhone())) {
                 markLetterUnsend(letter);
-                saveSmsRecord(student, parent, letter.getContent(), SMS_STATUS_FAIL, "家长联系电话为空");
+                saveSmsRecord(student, parent, letter.getId(), SMS_STATUS_FAIL, "家长联系电话为空");
                 result.addFail(student.getId(), student.getName(), "家长联系电话为空");
                 continue;
             }
 
             markLetterSent(letter);
-            saveSmsRecord(student, parent, letter.getContent(), SMS_STATUS_SUCCESS, null);
+            saveSmsRecord(student, parent, letter.getId(), SMS_STATUS_SUCCESS, null);
             result.addSuccess();
         }
 
@@ -338,14 +342,14 @@ public class StudentLetterServiceImpl implements StudentLetterService {
 
     private void saveSmsRecord(Student student,
                                StudentParent parent,
-                               String letterContent,
+                               Long letterId,
                                String status,
                                String failReason) {
         SmsRecord smsRecord = new SmsRecord();
         smsRecord.setStudentId(student.getId());
         smsRecord.setParentId(parent.getId());
         smsRecord.setPhone(StringUtils.hasText(parent.getPhone()) ? parent.getPhone() : "");
-        smsRecord.setContent(buildSmsContent(student, parent));
+        smsRecord.setContent(buildSmsContent(student, parent, letterId));
         smsRecord.setStatus(status);
         smsRecord.setFailReason(failReason);
         smsRecord.setSendTime(LocalDateTime.now());
@@ -354,10 +358,17 @@ public class StudentLetterServiceImpl implements StudentLetterService {
         smsRecordMapper.insert(smsRecord);
     }
 
-    private String buildSmsContent(Student student, StudentParent parent) {
-        String parentName = StringUtils.hasText(parent.getName()) ? parent.getName() : "家长";
-        return parentName + "您好：请查看学生" + student.getName()
-                + "在校情况，账号为学生身份证号，初始密码为身份证后六位。";
+    private String buildSmsContent(Student student, StudentParent parent, Long letterId) {
+        String salutation = StringUtils.hasText(parent.getName()) ? parent.getName() : "家长";
+        return salutation + "您好：请查看学生" + student.getName()
+                + "在校情况：" + buildLetterLink(letterId)
+                + "，账号为学生身份证号，初始密码为身份证后六位。";
+    }
+
+    private String buildLetterLink(Long letterId) {
+        String baseUrl = systemConfigService.getValue(CONFIG_H5_BASE_URL, DEFAULT_H5_BASE_URL);
+        String separator = baseUrl.contains("?") ? "&" : "?";
+        return baseUrl + separator + "letterId=" + letterId;
     }
 
     private String renderTemplate(String content, Long studentId) {

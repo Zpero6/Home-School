@@ -14,4 +14,6 @@ public class ParentLoginVO {
     private String studentName;
 
     private String token;
+
+    private Boolean needChangePassword;
 }

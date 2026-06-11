@@ -6,6 +6,7 @@ import com.zpero.dto.student.StudentDTO;
 import com.zpero.dto.student.StudentQueryDTO;
 import com.zpero.entity.Student;
 import com.zpero.service.StudentService;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -20,6 +21,12 @@ public class StudentController {
     @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE','COUNSELOR')")
     public Result<PageResult<Student>> queryPage(StudentQueryDTO queryDTO){
         return Result.success(studentService.queryPage(queryDTO));
+    }
+
+    @GetMapping("/students/export")
+    @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE')")
+    public void exportStudents(StudentQueryDTO queryDTO, HttpServletResponse response) {
+        studentService.exportStudents(queryDTO, response);
     }
 
     @GetMapping("/students/{id}")
