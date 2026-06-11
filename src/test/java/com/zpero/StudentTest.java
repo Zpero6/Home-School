@@ -1015,6 +1015,19 @@ public class StudentTest {
 
         assertTrue(readCount != null && readCount == 1);
         assertTrue(feedbackCount != null && feedbackCount == 1);
+
+        mockMvc.perform(get("/api/v1/feedbacks")
+                        .header("Authorization", "Bearer " + counselorToken)
+                        .param("content", feedbackContent)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].letterId").value(letterId))
+                .andExpect(jsonPath("$.data.records[0].studentId").value(student.getId()))
+                .andExpect(jsonPath("$.data.records[0].studentName").value(student.getName()))
+                .andExpect(jsonPath("$.data.records[0].parentName").value("查阅测试家长"))
+                .andExpect(jsonPath("$.data.records[0].content").value(feedbackContent));
     }
 
     private SysUser prepareCounselor(String username,
