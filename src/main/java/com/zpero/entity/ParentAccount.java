@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 @TableName("parent_account")
 public class ParentAccount {
 
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     private Long studentId;

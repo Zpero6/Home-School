@@ -8,6 +8,8 @@ public interface JwtTokenService {
 
     void storeToken(Long userId, String tokenId, LoginUser loginUser) ;
 
+    void storeCurrentUser(Long userId, String tokenId, CurrentLoginUser currentLoginUser);
+
     CurrentLoginUser getLoginUser(Long userId, String tokenId) ;
 
     void revokeToken(Long userId, String tokenId) ;

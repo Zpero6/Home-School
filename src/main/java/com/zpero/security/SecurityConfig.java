@@ -41,7 +41,7 @@ public class SecurityConfig {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth    // URL请求的授权规则
-                        .requestMatchers("/api/v1/auth/login")       // 和这段URL匹配的请求
+                        .requestMatchers("/api/v1/auth/login", "/api/v1/parent/login")       // 和这段URL匹配的请求
                         .permitAll()    // 不需要认证
                         .anyRequest()    //以外的任何请求
                         .authenticated())  //都要走认证

@@ -16,4 +16,6 @@ public class CurrentLoginUser {
     private String realName;
     private String roleCode;
     private Long collegeId;
+    private Long parentAccountId;
+    private Long studentId;
 }

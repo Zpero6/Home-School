@@ -36,9 +36,14 @@ public class JwtTokenServiceImpl implements JwtTokenService {
                 .collegeId(loginUser.getUser().getCollegeId())
                 .build();
 
+        storeCurrentUser(userId, tokenId, cache);
+    }
+
+    @Override
+    public void storeCurrentUser(Long userId, String tokenId, CurrentLoginUser currentLoginUser) {
         try {
             String key = TOKEN_PREFIX + userId + ":" + tokenId;
-            String value = objectMapper.writeValueAsString(cache);
+            String value = objectMapper.writeValueAsString(currentLoginUser);
             redisTemplate.opsForValue().set(
                     key, value, Duration.ofMillis(expireTime));
 
