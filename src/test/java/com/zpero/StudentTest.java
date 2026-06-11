@@ -904,25 +904,44 @@ public class StudentTest {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """);
 
-        String counselorUsername = "parentLetterCounselor";
+        String suffix = String.valueOf(System.currentTimeMillis()).substring(7);
+        String counselorUsername = "parentLetterCounselor" + suffix;
         String counselorPassword = "123456";
         SysUser counselor = prepareCounselor(
                 counselorUsername,
                 "家长查阅测试辅导员",
                 counselorPassword,
-                "13800001301"
+                "13800" + suffix
         );
         String counselorToken = loginAndGetToken(counselorUsername, counselorPassword);
 
-        String idCard = "110101200001010066";
+        String idCard = "110101200001" + suffix;
         Student student = prepareStudent(
-                "PARENTLETTER001",
+                "PARENTLETTER" + suffix + "01",
                 "家长查阅测试学生",
                 idCard,
                 counselor.getId(),
                 counselor.getCollegeId()
         );
-        prepareParent(student.getId(), "查阅测试家长", "FATHER", "13900001301", 1);
+        prepareParent(student.getId(), "查阅测试家长", "FATHER", "13900" + suffix, 1);
+
+        String unreadIdCard = "110101200002" + suffix;
+        Student unreadStudent = prepareStudent(
+                "PARENTLETTER" + suffix + "02",
+                "未查阅测试学生",
+                unreadIdCard,
+                counselor.getId(),
+                counselor.getCollegeId()
+        );
+        prepareParent(unreadStudent.getId(), "未查阅测试家长", "MOTHER", "13901" + suffix, 1);
+
+        Student unsentStudent = prepareStudent(
+                "PARENTLETTER" + suffix + "03",
+                "未发送测试学生",
+                "110101200003" + suffix,
+                counselor.getId(),
+                counselor.getCollegeId()
+        );
 
         Map<String, Object> templateMap = new HashMap<>();
         templateMap.put("name", "家长查阅测试模板" + System.currentTimeMillis());
@@ -942,15 +961,15 @@ public class StudentTest {
 
         Map<String, Object> sendMap = new HashMap<>();
         sendMap.put("templateId", templateId);
-        sendMap.put("studentIds", List.of(student.getId()));
+        sendMap.put("studentIds", List.of(student.getId(), unreadStudent.getId()));
         mockMvc.perform(post("/api/v1/letters/send")
                         .header("Authorization", "Bearer " + counselorToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(sendMap)))
                 .andDo(print())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalCount").value(1))
-                .andExpect(jsonPath("$.data.successCount").value(1))
+                .andExpect(jsonPath("$.data.totalCount").value(2))
+                .andExpect(jsonPath("$.data.successCount").value(2))
                 .andExpect(jsonPath("$.data.failCount").value(0));
 
         Map<String, Object> parentLoginMap = new HashMap<>();
@@ -1034,34 +1053,136 @@ public class StudentTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andDo(print())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.shouldSendCount").value(1))
-                .andExpect(jsonPath("$.data.actualSendCount").value(1))
+                .andExpect(jsonPath("$.data.shouldSendCount").value(3))
+                .andExpect(jsonPath("$.data.actualSendCount").value(2))
                 .andExpect(jsonPath("$.data.readCount").value(1))
-                .andExpect(jsonPath("$.data.unreadCount").value(0))
-                .andExpect(jsonPath("$.data.readRate").value(100.00));
+                .andExpect(jsonPath("$.data.unreadCount").value(1))
+                .andExpect(jsonPath("$.data.readRate").value(50.00));
 
         MvcResult feedbackStatisticsResult = mockMvc.perform(get("/api/v1/statistics/feedback")
                         .header("Authorization", "Bearer " + counselorToken)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andDo(print())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.shouldSendCount").value(1))
-                .andExpect(jsonPath("$.data.actualSendCount").value(1))
+                .andExpect(jsonPath("$.data.shouldSendCount").value(3))
+                .andExpect(jsonPath("$.data.actualSendCount").value(2))
                 .andExpect(jsonPath("$.data.feedbackStudentCount").value(1))
-                .andExpect(jsonPath("$.data.noFeedbackCount").value(0))
-                .andExpect(jsonPath("$.data.feedbackRate").value(100.00))
+                .andExpect(jsonPath("$.data.noFeedbackCount").value(1))
+                .andExpect(jsonPath("$.data.feedbackRate").value(50.00))
                 .andReturn();
         Map<String, Object> feedbackStatisticsResponse = objectMapper.readValue(
                 feedbackStatisticsResult.getResponse().getContentAsString(), Map.class);
         Map<String, Object> feedbackStatisticsData =
                 (Map<String, Object>) feedbackStatisticsResponse.get("data");
         assertTrue(((Number) feedbackStatisticsData.get("totalFeedbackCount")).longValue() >= 1);
+
+        mockMvc.perform(get("/api/v1/statistics/send/class")
+                        .header("Authorization", "Bearer " + counselorToken)
+                        .param("classId", String.valueOf(student.getClassId()))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.targetType").value("CLASS"))
+                .andExpect(jsonPath("$.data.summary.shouldSendCount").value(3))
+                .andExpect(jsonPath("$.data.summary.actualSendCount").value(2))
+                .andExpect(jsonPath("$.data.summary.unsentCount").value(1))
+                .andExpect(jsonPath("$.data.summary.completionRate").value(66.67))
+                .andExpect(jsonPath("$.data.records[0].targetId").value(student.getClassId()));
+
+        mockMvc.perform(get("/api/v1/statistics/unread")
+                        .header("Authorization", "Bearer " + counselorToken)
+                        .param("classId", String.valueOf(student.getClassId()))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].studentId").value(unreadStudent.getId()))
+                .andExpect(jsonPath("$.data.records[0].studentName").value(unreadStudent.getName()))
+                .andExpect(jsonPath("$.data.records[0].sendStatus").value("SENT"))
+                .andExpect(jsonPath("$.data.records[0].readStatus").value("UNREAD"))
+                .andExpect(jsonPath("$.data.records[0].letterId").exists());
+
+        mockMvc.perform(get("/api/v1/statistics/unsent")
+                        .header("Authorization", "Bearer " + counselorToken)
+                        .param("classId", String.valueOf(student.getClassId()))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].studentId").value(unsentStudent.getId()))
+                .andExpect(jsonPath("$.data.records[0].studentName").value(unsentStudent.getName()))
+                .andExpect(jsonPath("$.data.records[0].sendStatus").value("UNSENT"));
+
+        String collegeUsername = "sendStatisticsCollege";
+        String schoolUsername = "sendStatisticsSchool";
+        String statisticsPassword = "123456";
+        prepareRoleUser(collegeUsername, "发送统计学院用户", statisticsPassword, "13800001302", 2L, counselor.getCollegeId());
+        prepareRoleUser(schoolUsername, "发送统计学校用户", statisticsPassword, "13800001303", 1L, counselor.getCollegeId());
+        String collegeToken = loginAndGetToken(collegeUsername, statisticsPassword);
+        String schoolToken = loginAndGetToken(schoolUsername, statisticsPassword);
+
+        mockMvc.perform(get("/api/v1/statistics/send/college")
+                        .header("Authorization", "Bearer " + collegeToken)
+                        .param("counselorId", String.valueOf(counselor.getId()))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.targetType").value("COUNSELOR"))
+                .andExpect(jsonPath("$.data.summary.shouldSendCount").value(3))
+                .andExpect(jsonPath("$.data.summary.actualSendCount").value(2))
+                .andExpect(jsonPath("$.data.summary.unsentCount").value(1))
+                .andExpect(jsonPath("$.data.summary.completionRate").value(66.67))
+                .andExpect(jsonPath("$.data.records[0].targetId").value(counselor.getId()));
+
+        mockMvc.perform(get("/api/v1/statistics/send/school")
+                        .header("Authorization", "Bearer " + schoolToken)
+                        .param("collegeId", String.valueOf(counselor.getCollegeId()))
+                        .param("counselorId", String.valueOf(counselor.getId()))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.targetType").value("COLLEGE"))
+                .andExpect(jsonPath("$.data.summary.shouldSendCount").value(3))
+                .andExpect(jsonPath("$.data.summary.actualSendCount").value(2))
+                .andExpect(jsonPath("$.data.summary.unsentCount").value(1))
+                .andExpect(jsonPath("$.data.summary.completionRate").value(66.67))
+                .andExpect(jsonPath("$.data.records[0].targetId").value(counselor.getCollegeId()));
+
+        MvcResult sendExportResult = mockMvc.perform(get("/api/v1/statistics/send/export")
+                        .header("Authorization", "Bearer " + collegeToken)
+                        .param("counselorId", String.valueOf(counselor.getId())))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertExcelResponse(sendExportResult, "send-statistics.xlsx");
+
+        MvcResult readExportResult = mockMvc.perform(get("/api/v1/statistics/read/export")
+                        .header("Authorization", "Bearer " + collegeToken)
+                        .param("counselorId", String.valueOf(counselor.getId())))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertExcelResponse(readExportResult, "read-statistics.xlsx");
+
+        MvcResult feedbackExportResult = mockMvc.perform(get("/api/v1/statistics/feedback/export")
+                        .header("Authorization", "Bearer " + collegeToken)
+                        .param("counselorId", String.valueOf(counselor.getId())))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertExcelResponse(feedbackExportResult, "feedback-statistics.xlsx");
     }
 
     private SysUser prepareCounselor(String username,
                                      String realName,
                                      String password,
                                      String phone) {
+        return prepareRoleUser(username, realName, password, phone, 3L, 1L);
+    }
+
+    private SysUser prepareRoleUser(String username,
+                                    String realName,
+                                    String password,
+                                    String phone,
+                                    Long roleId,
+                                    Long collegeId) {
         SysUser counselor = sysUserMapper.selectOne(
                 new LambdaQueryWrapper<SysUser>()
                         .eq(SysUser::getUsername, username)
@@ -1070,16 +1191,16 @@ public class StudentTest {
             counselor = new SysUser();
             counselor.setUsername(username);
             counselor.setRealName(realName);
-            counselor.setRoleId(3L);
-            counselor.setCollegeId(1L);
+            counselor.setRoleId(roleId);
+            counselor.setCollegeId(collegeId);
             counselor.setPhone(phone);
             counselor.setStatus(1);
             counselor.setPassword(passwordEncoder.encode(password));
             sysUserMapper.insert(counselor);
         } else {
             counselor.setRealName(realName);
-            counselor.setRoleId(3L);
-            counselor.setCollegeId(1L);
+            counselor.setRoleId(roleId);
+            counselor.setCollegeId(collegeId);
             counselor.setPhone(phone);
             counselor.setStatus(1);
             counselor.setPassword(passwordEncoder.encode(password));
@@ -1103,6 +1224,17 @@ public class StudentTest {
                 loginResult.getResponse().getContentAsString(), Map.class);
         Map<String, Object> loginData = (Map<String, Object>) loginResponse.get("data");
         return (String) loginData.get("token");
+    }
+
+    private void assertExcelResponse(MvcResult result, String filename) {
+        String contentType = result.getResponse().getContentType();
+        String contentDisposition = result.getResponse().getHeader("Content-Disposition");
+        byte[] bytes = result.getResponse().getContentAsByteArray();
+
+        assertTrue(contentType != null
+                && contentType.contains("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+        assertTrue(contentDisposition != null && contentDisposition.contains(filename));
+        assertTrue(bytes.length > 0);
     }
 
     private Student prepareStudent(String studentNo,
