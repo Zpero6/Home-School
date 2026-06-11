@@ -34,6 +34,7 @@ public class StudentController {
         return Result.success(studentService.createStudent(student));
     }
 
+    @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE')")
     @PutMapping("/students/{id}")
     public Result<Void> updateStudent(@PathVariable Long id, @RequestBody StudentDTO studentDTO) {
         studentService.updateStudent(id, studentDTO);
@@ -41,6 +42,7 @@ public class StudentController {
     }
 
     @DeleteMapping("/students/{id}")
+    @PreAuthorize("hasAnyRole('SCHOOL','COLLEGE')")
     public Result<Void> deleteStudent(@PathVariable Long id) {
         studentService.deleteStudent(id);
         return Result.success();

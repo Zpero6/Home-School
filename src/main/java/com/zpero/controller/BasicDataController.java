@@ -4,6 +4,8 @@ import com.zpero.common.result.Result;
 import com.zpero.entity.ClassInfo;
 import com.zpero.entity.College;
 import com.zpero.service.BasicDataService;
+import com.zpero.vo.Counselor.CounselorVo;
+import com.zpero.vo.student.StatusVo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,14 +22,25 @@ import java.util.List;
 public class BasicDataController {
 
     private final BasicDataService basicDataService;
+
     @GetMapping("/college")
     public Result<List<College>> listCollege() {
         return Result.success(basicDataService.listCollege());
     }
 
     @GetMapping("/classes")
-    public Result<List<ClassInfo>> listClassInfo(@RequestParam(required = false)Long collegeId) {
+    public Result<List<ClassInfo>> listClassInfo(@RequestParam(required = false) Long collegeId) {
         return Result.success(basicDataService.listClassInfo(collegeId));
+    }
+
+    @GetMapping("/counselors")
+    public Result<List<CounselorVo>> listCounselors(@RequestParam(required = false) Long collegeId) {
+        return Result.success(basicDataService.listCounselors(collegeId));
+    }
+
+    @GetMapping("/student-statuses")
+    public Result<List<StatusVo>> listStudentStatuses() {
+        return Result.success(basicDataService.listStudentStatuses());
     }
 
 }
