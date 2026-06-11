@@ -21,7 +21,9 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -89,11 +91,47 @@ public class StudentTest {
 
         String responseContent = mvcResult.getResponse().getContentAsString();
         Map<String, Object> responseMap = objectMapper.readValue(responseContent, Map.class);
-        Map<String,Object> dataMap = (Map<String,Object>) responseMap.get("data");
+        Map<String, Object> dataMap = (Map<String, Object>) responseMap.get("data");
 
         String token = (String) dataMap.get("token");
         Claims claims = jwtUtil.parseToken(token);
         System.out.println(claims);
     }
 
+    @Test
+    void testMeWithoutToken() throws Exception {
+        MvcResult mvcResult = mockMvc.perform(get("/me")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isUnauthorized())
+                .andReturn();
+        System.out.println(mvcResult.getResponse().getStatus());
+    }
+
+    @Test
+    void testWithoutAuthorization() throws Exception {
+
+        Map<String, Object> map = new HashMap<>();
+        map.put("username", "Counselor1");
+        map.put("password", "123456");
+        MvcResult mvcResult = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(map)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.token").exists())
+                .andReturn();
+
+        String responseContent = mvcResult.getResponse().getContentAsString();
+        Map<String, Object> responseMap = objectMapper.readValue(responseContent, Map.class);
+        Map<String, Object> dataMap = (Map<String, Object>) responseMap.get("data");
+        String token = (String) dataMap.get("token");
+
+        MvcResult mvcResult1 = mockMvc.perform(get("/school")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200)).andReturn();
+
+        System.out.println(mvcResult1.getResponse().getContentAsString());
+    }
 }

@@ -13,6 +13,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.Set;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -72,7 +73,10 @@ public class JwtTokenServiceImpl implements JwtTokenService {
 
     @Override
     public void revokeAllTokens(Long userId) {
-        redisTemplate.delete(TOKEN_PREFIX + userId + ":*");
+        Set<String> keys = redisTemplate.keys(TOKEN_PREFIX + userId);
+        if(!keys.isEmpty() && keys != null){
+            redisTemplate.delete(keys);
+        }
 
     }
 

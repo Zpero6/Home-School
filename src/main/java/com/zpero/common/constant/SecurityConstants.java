@@ -1,6 +1,6 @@
 package com.zpero.common.constant;
 
-public interface SecurityConstant {
+public interface SecurityConstants {
 
     String HEADER = "Authorization";
 

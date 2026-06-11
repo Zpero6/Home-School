@@ -7,7 +7,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 
 @Configuration
 public class RedisConfig {
@@ -23,13 +22,6 @@ public class RedisConfig {
         return template;
     }
 
-    @Bean
-    public GenericJackson2JsonRedisSerializer redisSerializer(ObjectMapper objectMapper){
-        objectMapper.activateDefaultTyping(
-                objectMapper.getPolymorphicTypeValidator(),
-                ObjectMapper.DefaultTyping.NON_FINAL
-        );
-        return new GenericJackson2JsonRedisSerializer(objectMapper);
 
-    }
+
 }

@@ -1,5 +1,7 @@
 package com.zpero.service.impl;
 
+import com.zpero.common.constant.SecurityConstants;
+import com.zpero.common.exception.BusinessException;
 import com.zpero.dto.LoginDTO;
 import com.zpero.security.JwtUtil;
 import com.zpero.security.LoginUser;
@@ -11,6 +13,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.UUID;
 
@@ -49,6 +52,16 @@ public class AuthServiceImpl implements AuthService {
                 .build();
     }
 
-
+    @Override
+    public void logout(String authorization) {
+        if (!StringUtils.hasText(authorization)
+                || !authorization.startsWith(SecurityConstants.TOKEN_PREFIX)) {
+            throw new BusinessException(401, "用户未登录");
+        }
+        String token = authorization.substring(SecurityConstants.TOKEN_PREFIX.length());
+        Long userId = jwtUtil.getUserId(token);
+        String tokenId = jwtUtil.getTokenId(token);
+        jwtTokenService.revokeToken(userId, token);
+    }
 
 }

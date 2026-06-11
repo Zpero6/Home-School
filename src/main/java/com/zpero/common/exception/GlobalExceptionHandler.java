@@ -1,11 +1,12 @@
 package com.zpero.common.exception;
 
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.zpero.common.result.Result;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 
@@ -26,6 +27,12 @@ public class GlobalExceptionHandler {
     public Result handleBusinessException(BusinessException e) {
 
         return Result.fail(e.getCode(), e.getMessage());
+    }
+
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public Result<Void> handleAuthorizationDeniedException(AuthorizationDeniedException e) {
+        return Result.fail(403, "权限不足");
     }
 
     @ExceptionHandler

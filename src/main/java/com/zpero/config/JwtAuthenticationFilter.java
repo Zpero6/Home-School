@@ -10,14 +10,13 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
-import com.zpero.common.constant.SecurityConstant;
+import com.zpero.common.constant.SecurityConstants;
 import java.io.IOException;
 import java.util.List;
 
@@ -37,16 +36,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
 
-        String authorization = request.getHeader(SecurityConstant.HEADER);
+        String authorization = request.getHeader(SecurityConstants.HEADER);
 
         if(!StringUtils.hasText(authorization)
-                || !authorization.startsWith(SecurityConstant.TOKEN_PREFIX)){
+                || !authorization.startsWith(SecurityConstants.TOKEN_PREFIX)){
 
             chain.doFilter(request, response);
             return;
         }
 
-        String token = authorization.substring(SecurityConstant.TOKEN_PREFIX.length());
+        String token = authorization.substring(SecurityConstants.TOKEN_PREFIX.length());
 
         try{
 
