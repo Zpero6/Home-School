@@ -887,6 +887,136 @@ public class StudentTest {
         assertTrue(parentAccountCount != null && parentAccountCount >= 1);
     }
 
+    @Test
+    void testParentReadLetterAndSubmitFeedback() throws Exception {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS parent_feedback (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    letter_id BIGINT NOT NULL,
+                    student_id BIGINT NOT NULL,
+                    parent_id BIGINT NOT NULL,
+                    content TEXT NOT NULL,
+                    images VARCHAR(1000) NULL,
+                    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    KEY idx_feedback_letter (letter_id),
+                    KEY idx_feedback_student (student_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """);
+
+        String counselorUsername = "parentLetterCounselor";
+        String counselorPassword = "123456";
+        SysUser counselor = prepareCounselor(
+                counselorUsername,
+                "家长查阅测试辅导员",
+                counselorPassword,
+                "13800001301"
+        );
+        String counselorToken = loginAndGetToken(counselorUsername, counselorPassword);
+
+        String idCard = "110101200001010066";
+        Student student = prepareStudent(
+                "PARENTLETTER001",
+                "家长查阅测试学生",
+                idCard,
+                counselor.getId(),
+                counselor.getCollegeId()
+        );
+        prepareParent(student.getId(), "查阅测试家长", "FATHER", "13900001301", 1);
+
+        Map<String, Object> templateMap = new HashMap<>();
+        templateMap.put("name", "家长查阅测试模板" + System.currentTimeMillis());
+        templateMap.put("content", "<h1>家长端信件</h1><p>请查收</p>");
+        templateMap.put("backgroundUrl", "/uploads/bg/parent-letter.png");
+        templateMap.put("logoUrl", "/uploads/logo/parent-letter.png");
+
+        MvcResult templateResult = mockMvc.perform(post("/api/v1/templates")
+                        .header("Authorization", "Bearer " + counselorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(templateMap)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").exists())
+                .andReturn();
+        Long templateId = ((Number) objectMapper.readValue(
+                templateResult.getResponse().getContentAsString(), Map.class).get("data")).longValue();
+
+        Map<String, Object> sendMap = new HashMap<>();
+        sendMap.put("templateId", templateId);
+        sendMap.put("studentIds", List.of(student.getId()));
+        mockMvc.perform(post("/api/v1/letters/send")
+                        .header("Authorization", "Bearer " + counselorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(sendMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalCount").value(1))
+                .andExpect(jsonPath("$.data.successCount").value(1))
+                .andExpect(jsonPath("$.data.failCount").value(0));
+
+        Map<String, Object> parentLoginMap = new HashMap<>();
+        parentLoginMap.put("idCard", idCard);
+        parentLoginMap.put("password", idCard.substring(idCard.length() - 6));
+        MvcResult parentLoginResult = mockMvc.perform(post("/api/v1/parent/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(parentLoginMap)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.token").exists())
+                .andReturn();
+        Map<String, Object> parentLoginResponse = objectMapper.readValue(
+                parentLoginResult.getResponse().getContentAsString(), Map.class);
+        Map<String, Object> parentLoginData = (Map<String, Object>) parentLoginResponse.get("data");
+        String parentToken = (String) parentLoginData.get("token");
+
+        MvcResult letterResult = mockMvc.perform(get("/api/v1/parent/letter")
+                        .header("Authorization", "Bearer " + parentToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.studentId").value(student.getId()))
+                .andExpect(jsonPath("$.data.studentName").value(student.getName()))
+                .andExpect(jsonPath("$.data.content").value("<h1>家长端信件</h1><p>请查收</p>"))
+                .andExpect(jsonPath("$.data.status").value("READ"))
+                .andExpect(jsonPath("$.data.readTime").exists())
+                .andExpect(jsonPath("$.data.backgroundUrl").value("/uploads/bg/parent-letter.png"))
+                .andExpect(jsonPath("$.data.logoUrl").value("/uploads/logo/parent-letter.png"))
+                .andReturn();
+
+        Map<String, Object> letterResponse = objectMapper.readValue(
+                letterResult.getResponse().getContentAsString(), Map.class);
+        Map<String, Object> letterData = (Map<String, Object>) letterResponse.get("data");
+        Long letterId = ((Number) letterData.get("letterId")).longValue();
+
+        String feedbackContent = "已收到家长端信件" + System.currentTimeMillis();
+        Map<String, Object> feedbackMap = new HashMap<>();
+        feedbackMap.put("letterId", letterId);
+        feedbackMap.put("content", feedbackContent);
+        feedbackMap.put("images", "/uploads/feedback/parent-letter.png");
+
+        mockMvc.perform(post("/api/v1/parent/feedback")
+                        .header("Authorization", "Bearer " + parentToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(feedbackMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").exists());
+
+        Integer readCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM student_letter WHERE id = ? AND status = 'READ' AND read_time IS NOT NULL",
+                Integer.class,
+                letterId
+        );
+        Integer feedbackCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM parent_feedback WHERE letter_id = ? AND student_id = ? AND content = ?",
+                Integer.class,
+                letterId,
+                student.getId(),
+                feedbackContent
+        );
+
+        assertTrue(readCount != null && readCount == 1);
+        assertTrue(feedbackCount != null && feedbackCount == 1);
+    }
+
     private SysUser prepareCounselor(String username,
                                      String realName,
                                      String password,

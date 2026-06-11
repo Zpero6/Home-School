@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 @TableName("parent_feedback")
 public class ParentFeedback {
 
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     private Long letterId;
