@@ -24,6 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -372,6 +373,222 @@ public class StudentTest {
                 (List<Map<String, Object>>) deletedListResponse.get("data");
         assertFalse(deletedScores.stream().anyMatch(score ->
                 ((Number) score.get("id")).longValue() == scoreId
+        ));
+    }
+
+    @Test
+    void testStudentAwardAndCadreCrud() throws Exception {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS student_award (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    student_id BIGINT NOT NULL,
+                    award_name VARCHAR(200) NOT NULL,
+                    award_level VARCHAR(50) NULL,
+                    award_time DATETIME NULL,
+                    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+                    PRIMARY KEY (id),
+                    KEY idx_award_student (student_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS student_cadre (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    student_id BIGINT NOT NULL,
+                    position_name VARCHAR(100) NOT NULL,
+                    start_time DATETIME NULL,
+                    end_time DATETIME NULL,
+                    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+                    PRIMARY KEY (id),
+                    KEY idx_cadre_student (student_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """);
+
+        String username = "awardCadreCounselorTest";
+        String password = "123456";
+
+        SysUser counselor = sysUserMapper.selectOne(
+                new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getUsername, username)
+        );
+        if (counselor == null) {
+            counselor = new SysUser();
+            counselor.setUsername(username);
+            counselor.setRealName("获奖班干部测试辅导员");
+            counselor.setRoleId(3L);
+            counselor.setCollegeId(1L);
+            counselor.setPhone("13800001010");
+            counselor.setStatus(1);
+            counselor.setPassword(passwordEncoder.encode(password));
+            sysUserMapper.insert(counselor);
+        } else {
+            counselor.setRoleId(3L);
+            counselor.setCollegeId(counselor.getCollegeId() == null ? 1L : counselor.getCollegeId());
+            counselor.setPassword(passwordEncoder.encode(password));
+            sysUserMapper.updateById(counselor);
+        }
+
+        String idCard = "110101200001010033";
+        Student student = studentMapper.selectOne(
+                new LambdaQueryWrapper<Student>()
+                        .eq(Student::getIdCard, idCard)
+        );
+        if (student == null) {
+            student = new Student();
+            student.setStudentNo("AWARD001");
+            student.setName("获奖班干部测试学生");
+            student.setIdCard(idCard);
+            student.setCollegeId(counselor.getCollegeId());
+            student.setClassId(1L);
+            student.setCounselorId(counselor.getId());
+            student.setEnrollmentYear("2023");
+            student.setStatus("在校");
+            studentMapper.insert(student);
+        } else {
+            student.setCollegeId(counselor.getCollegeId());
+            student.setCounselorId(counselor.getId());
+            studentMapper.updateById(student);
+        }
+
+        Map<String, Object> loginMap = new HashMap<>();
+        loginMap.put("username", username);
+        loginMap.put("password", password);
+        MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginMap)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.token").exists())
+                .andReturn();
+
+        Map<String, Object> loginResponse = objectMapper.readValue(
+                loginResult.getResponse().getContentAsString(), Map.class);
+        Map<String, Object> loginData = (Map<String, Object>) loginResponse.get("data");
+        String token = (String) loginData.get("token");
+
+        String awardName = "优秀学生干部" + System.currentTimeMillis();
+        Map<String, Object> awardCreateMap = new HashMap<>();
+        awardCreateMap.put("awardName", awardName);
+        awardCreateMap.put("awardLevel", "校级");
+        awardCreateMap.put("awardTime", LocalDateTime.of(2026, 6, 1, 10, 0));
+
+        MvcResult awardCreateResult = mockMvc.perform(post("/api/v1/students/{studentId}/awards", student.getId())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(awardCreateMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").exists())
+                .andReturn();
+        Long awardId = ((Number) objectMapper.readValue(
+                awardCreateResult.getResponse().getContentAsString(), Map.class).get("data")).longValue();
+
+        String updatedAwardName = awardName + "更新";
+        Map<String, Object> awardUpdateMap = new HashMap<>();
+        awardUpdateMap.put("awardName", updatedAwardName);
+        awardUpdateMap.put("awardLevel", "省级");
+        awardUpdateMap.put("awardTime", LocalDateTime.of(2026, 6, 2, 10, 0));
+
+        mockMvc.perform(put("/api/v1/awards/{id}", awardId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(awardUpdateMap)))
+                .andDo(print())
+                .andExpect(status().isOk());
+
+        MvcResult awardListResult = mockMvc.perform(get("/api/v1/students/{studentId}/awards", student.getId())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andReturn();
+        Map<String, Object> awardListResponse = objectMapper.readValue(
+                awardListResult.getResponse().getContentAsString(), Map.class);
+        List<Map<String, Object>> awards = (List<Map<String, Object>>) awardListResponse.get("data");
+        assertTrue(awards.stream().anyMatch(award ->
+                ((Number) award.get("id")).longValue() == awardId
+                        && updatedAwardName.equals(award.get("awardName"))
+                        && "省级".equals(award.get("awardLevel"))
+        ));
+
+        String positionName = "班长" + System.currentTimeMillis();
+        Map<String, Object> cadreCreateMap = new HashMap<>();
+        cadreCreateMap.put("positionName", positionName);
+        cadreCreateMap.put("startTime", LocalDateTime.of(2025, 9, 1, 0, 0));
+        cadreCreateMap.put("endTime", LocalDateTime.of(2026, 7, 1, 0, 0));
+
+        MvcResult cadreCreateResult = mockMvc.perform(post("/api/v1/students/{studentId}/cadres", student.getId())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(cadreCreateMap)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").exists())
+                .andReturn();
+        Long cadreId = ((Number) objectMapper.readValue(
+                cadreCreateResult.getResponse().getContentAsString(), Map.class).get("data")).longValue();
+
+        String updatedPositionName = positionName + "更新";
+        Map<String, Object> cadreUpdateMap = new HashMap<>();
+        cadreUpdateMap.put("positionName", updatedPositionName);
+        cadreUpdateMap.put("startTime", LocalDateTime.of(2025, 9, 1, 0, 0));
+        cadreUpdateMap.put("endTime", LocalDateTime.of(2026, 7, 2, 0, 0));
+
+        mockMvc.perform(put("/api/v1/cadres/{id}", cadreId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(cadreUpdateMap)))
+                .andDo(print())
+                .andExpect(status().isOk());
+
+        MvcResult cadreListResult = mockMvc.perform(get("/api/v1/students/{studentId}/cadres", student.getId())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andReturn();
+        Map<String, Object> cadreListResponse = objectMapper.readValue(
+                cadreListResult.getResponse().getContentAsString(), Map.class);
+        List<Map<String, Object>> cadres = (List<Map<String, Object>>) cadreListResponse.get("data");
+        assertTrue(cadres.stream().anyMatch(cadre ->
+                ((Number) cadre.get("id")).longValue() == cadreId
+                        && updatedPositionName.equals(cadre.get("positionName"))
+        ));
+
+        mockMvc.perform(delete("/api/v1/awards/{id}", awardId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/v1/cadres/{id}", cadreId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk());
+
+        MvcResult deletedAwardListResult = mockMvc.perform(get("/api/v1/students/{studentId}/awards", student.getId())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andReturn();
+        List<Map<String, Object>> deletedAwards = (List<Map<String, Object>>) objectMapper.readValue(
+                deletedAwardListResult.getResponse().getContentAsString(), Map.class).get("data");
+        assertFalse(deletedAwards.stream().anyMatch(award ->
+                ((Number) award.get("id")).longValue() == awardId
+        ));
+
+        MvcResult deletedCadreListResult = mockMvc.perform(get("/api/v1/students/{studentId}/cadres", student.getId())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andReturn();
+        List<Map<String, Object>> deletedCadres = (List<Map<String, Object>>) objectMapper.readValue(
+                deletedCadreListResult.getResponse().getContentAsString(), Map.class).get("data");
+        assertFalse(deletedCadres.stream().anyMatch(cadre ->
+                ((Number) cadre.get("id")).longValue() == cadreId
         ));
     }
 }
